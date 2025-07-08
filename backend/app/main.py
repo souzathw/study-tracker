@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routes import auth
+from app.api.routes import auth, study
 from app.db.session import engine
 from app.db.base import Base
 
@@ -9,4 +9,5 @@ app = FastAPI()
 
 #Rotas
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(study.router, prefix="/study", tags=["study"])
 
