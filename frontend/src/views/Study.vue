@@ -1,129 +1,135 @@
 <template>
-    <div class="max-w-md mx-auto bg-white p-6 rounded shadow mt-10">
-      <h2 class="text-2xl font-bold text-center mb-4">Sessão de Estudo / Pausa</h2>
-  
-      <div class="mb-4">
-        <label class="block mb-1 font-medium">Minutos:</label>
-        <input v-model.number="minutes" type="number" class="border w-full p-2" placeholder="Ex: 25" />
-      </div>
-  
-      <div class="mb-4">
-        <label class="block mb-1 font-medium">Tag (assunto):</label>
-        <input v-model="tagName" type="text" class="border w-full p-2" placeholder="Ex: Matemática" />
-      </div>
-  
-      <div class="mb-4">
-        <label class="block mb-1 font-medium">Tipo:</label>
-        <select v-model="type" class="border w-full p-2">
-          <option value="study">Estudo</option>
-          <option value="pause">Pausa</option>
-        </select>
-      </div>
-  
-      <div class="flex justify-between mb-4">
-        <button @click="startTimer" :disabled="isRunning" class="bg-green-500 text-white px-4 py-2 rounded">
-          Iniciar {{ type === 'study' ? 'Estudo' : 'Pausa' }}
-        </button>
-        <button @click="stopTimer" :disabled="!isRunning" class="bg-red-500 text-white px-4 py-2 rounded">
-          Cancelar
-        </button>
-      </div>
-  
-      <div v-if="isRunning" class="text-center text-3xl font-bold text-blue-600">
-        {{ display }}
-      </div>
-  
-      <div class="mt-6 text-center">
-        <button @click="finalizarDia" class="text-sm text-gray-600 underline">Finalizar Dia</button>
-      </div>
+  <div class="max-w-md mx-auto mt-10 p-4 bg-white rounded shadow">
+    <h2 class="text-xl font-bold mb-4">Novo Bloco</h2>
+
+    <div class="mb-4">
+      <label class="block font-medium">Tipo:</label>
+      <select v-model="blockType" class="w-full p-2 border rounded">
+        <option value="Estudo">Estudo</option>
+        <option value="Pausa">Pausa</option>
+      </select>
     </div>
-  </template>
-  
-  <script setup>
-  import { ref } from 'vue'
-  import axios from 'axios'
-  
-  const minutes = ref(25)
-  const tagName = ref('')
-  const type = ref('study')
-  const isRunning = ref(false)
-  const display = ref('')
-  let timer = null
-  let startTime = null
-  
-  const startTimer = async () => {
-    if (!tagName.value || !minutes.value) return alert('Preencha o tempo e a tag')
-  
-    isRunning.value = true
-    startTime = new Date()
-  
-    let remaining = minutes.value * 60
-    updateDisplay(remaining)
-  
-    timer = setInterval(() => {
-      remaining--
-      updateDisplay(remaining)
-      if (remaining <= 0) {
-        clearInterval(timer)
-        isRunning.value = false
-        playAlarm()
-        salvarBloco()
-      }
-    }, 1000)
+
+    <div class="mb-4">
+      <label class="block font-medium">Duração (minutos):</label>
+      <input type="number" v-model.number="duration" class="w-full p-2 border rounded" min="1" />
+    </div>
+
+    <div class="mb-4">
+      <label class="block font-medium">Tags (opcional):</label>
+      <input type="text" v-model="tags" class="w-full p-2 border rounded" placeholder="ex: matemática, revisão" />
+    </div>
+
+    <button @click="addBlock" class="bg-green-600 text-white px-4 py-2 rounded mb-4">Adicionar Bloco</button>
+
+    <div v-if="currentBlock" class="text-center">
+      <h3 class="text-lg font-bold mb-2">Bloco atual: {{ currentBlock.type }}</h3>
+      <p class="text-4xl font-mono">{{ timeLeft }}</p>
+
+      <div class="flex justify-center gap-4 mt-4">
+        <button @click="startTimer" :disabled="isRunning" class="bg-blue-600 text-white px-4 py-2 rounded">
+          Iniciar
+        </button>
+        <button @click="resetTimer" class="bg-gray-500 text-white px-4 py-2 rounded">
+          Resetar
+        </button>
+      </div>
+
+      <div v-if="dayFinished" class="text-green-700 font-bold mt-4">
+        ✅ O dia foi finalizado!
+      </div>
+
+      <button v-if="!dayFinished" @click="finalizarDia"
+        class="mt-4 px-4 py-2 bg-red-600 text-white rounded font-bold">Finalizar Dia</button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, watch } from 'vue'
+import { useAuthStore } from '../stores/auth'
+import axios from 'axios'
+
+const blocks = ref([])
+const currentIndex = ref(0)
+const isRunning = ref(false)
+const timeLeft = ref('00:00')
+const timer = ref(null)
+const duration = ref(25)
+const blockType = ref('Estudo')
+const tags = ref('')
+const dayFinished = ref(false)
+
+const currentBlock = computed(() => blocks.value[currentIndex.value])
+
+const updateTimer = () => {
+  if (!currentBlock.value) return
+  const totalSeconds = currentBlock.value.duration * 60
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  timeLeft.value = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+const playSound = () => {
+  const audio = new Audio('/finish.mp3')
+  audio.play().catch(e => console.error('Erro ao tocar o som:', e))
+}
+
+const handleTimerEnd = () => {
+  playSound()
+  currentIndex.value++
+  if (currentIndex.value < blocks.value.length) {
+    updateTimer()
+    startTimer()
   }
-  
-  const stopTimer = () => {
-    clearInterval(timer)
-    isRunning.value = false
-    display.value = ''
+  checkIfDayFinished()
+}
+
+const checkIfDayFinished = () => {
+  if (currentIndex.value >= blocks.value.length) {
+    dayFinished.value = true
+    console.log('Dia finalizado!')
   }
-  
-  const updateDisplay = (seconds) => {
-    const m = String(Math.floor(seconds / 60)).padStart(2, '0')
-    const s = String(seconds % 60).padStart(2, '0')
-    display.value = `${m}:${s}`
-  }
-  
-  const playAlarm = () => {
-    const audio = new Audio('/alarm.mp3')
-    audio.play()
-  }
-  
-  const salvarBloco = async () => {
-    try {
-      // 1. Garante que o dia existe
-      const dia = await axios.post('/study/start-day')
-      const study_day_id = dia.data.id
-  
-      // 2. Cria a tag se necessário
-      const tagRes = await axios.post('/study/tag', {
-        name: tagName.value,
-        type: type.value
-      })
-      const tag_id = tagRes.data.id
-  
-      // 3. Cria o bloco
-      const endTime = new Date()
-      const diffMin = Math.round((endTime - startTime) / 60000)
-  
-      await axios.post('/study/block', {
-        study_day_id,
-        tag_id,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        duration_minutes: diffMin,
-        type: type.value
-      })
-  
-      alert('Bloco registrado com sucesso!')
-    } catch (err) {
-      console.error(err)
-      alert('Erro ao salvar o bloco.')
+}
+
+const startTimer = () => {
+  if (!currentBlock.value) return
+  let totalSeconds = currentBlock.value.duration * 60
+  isRunning.value = true
+
+  timer.value = setInterval(() => {
+    totalSeconds--
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    timeLeft.value = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+
+    if (totalSeconds <= 0) {
+      clearInterval(timer.value)
+      isRunning.value = false
+      handleTimerEnd()
     }
-  }
-  
-  const finalizarDia = () => {
-    alert('O dia foi finalizado! (ainda sem lógica de backend)')
-  }
-  </script>
-  
+  }, 1000)
+}
+
+const resetTimer = () => {
+  clearInterval(timer.value)
+  isRunning.value = false
+  updateTimer()
+}
+
+const addBlock = () => {
+  blocks.value.push({
+    type: blockType.value,
+    duration: duration.value,
+    tags: tags.value,
+  })
+  if (!currentBlock.value) updateTimer()
+}
+
+const finalizarDia = async () => {
+  dayFinished.value = true
+  console.log('Dia finalizado manualmente!')
+}
+
+watch(currentBlock, () => updateTimer())
+</script>
